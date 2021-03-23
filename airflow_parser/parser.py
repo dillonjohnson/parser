@@ -7,7 +7,7 @@ import yaml
 from airflow.models import DAG
 from airflow.models.baseoperator import chain
 
-from providers.carte.operators.carte import CarteExecuteJobOperator, CarteCheckJobOperator, \
+from airflow_parser.providers.carte.operators.carte import CarteExecuteJobOperator, CarteCheckJobOperator, \
     CarteGenerateRuntimeParametersOperator
 
 
