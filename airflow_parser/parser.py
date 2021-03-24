@@ -17,7 +17,7 @@ class DAGGenerator:
         self.control_file_path = control_file_path
 
     def generate_dags(self):
-        control_file_path = getenv('CONTROL_FILE_PATH', '/opt/airflow/control_files/')
+        control_file_path = getenv('CONTROL_FILE_PATH', self.control_file_path)
 
         args_dict = dict(
             env=getenv('ENV')
