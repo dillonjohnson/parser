@@ -1,2 +1,2 @@
-from airflow_parser.parser import DAGGenerator
-from airflow_parser.providers.carte.operators.carte import CarteExecuteJobOperator, CarteCheckJobOperator, CarteGenerateRuntimeParametersOperator
+import parser
+import providers.carte.operators.carte
