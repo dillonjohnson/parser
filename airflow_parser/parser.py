@@ -1,4 +1,6 @@
 import io
+import json
+import os
 from datetime import datetime
 from os import walk, getenv
 
@@ -10,8 +12,7 @@ from airflow.models.baseoperator import chain
 from airflow_parser.providers.carte.operators.carte import CarteExecuteJobOperator, CarteCheckJobOperator, \
     CarteGenerateRuntimeParametersOperator
 
-from airflow_parser.providers.aws.operators.aws import AthenaOperator, QuicksightSpiceRefreshOperator, \
-    QuicksightSpiceRefreshSensor
+from airflow_parser.providers.aws.operators.aws import AthenaOperator, GlueOperator
 
 from airflow_parser.providers.google.operators.google import BigqueryDataTransferOperator
 
@@ -56,11 +57,17 @@ class DAGGenerator:
                     elif yaml_object['type'] == 'step_specification':
                         step_specs[yaml_object['name']] = yaml_object
 
+        etl_scripts = {}
+        for (dirpath, dirnames, filenames) in walk(self.etl_scripts_path):
+            for filename in filenames:
+                if filename.endswith('.py') or filename.endswith('.sql'):
+                    filepath = dirpath + '/' + filename
+                    etl_scripts[str(filepath).replace(self.etl_scripts_path, '')] = str(filepath)
+
         DEFAULT_ARGS = {
             'owner': self.dag_owners,
             'start_date': datetime(2020, 1, 1),  # Abitrary date in the past, won't matter since catchup=False
-            'depends_on_past': False,
-            # 'on_failure_callback': on_failure_callback
+            'depends_on_past': False
         }
 
         for flow_spec in flow_specs:
@@ -85,6 +92,27 @@ class DAGGenerator:
                                 target_table=step['target_data'][0]['table'],
                                 target_s3=step['target_data'][0]['s3']
                             )
+                        elif etl_platform == 'glue':
+                            additional_job_config = step.parameters.copy()
+                            remove_keys = ['glue_max_capacity', 'python_version']
+                            for key in remove_keys:
+                                try:
+                                    additional_job_config.pop(key)
+                                except KeyError:
+                                    continue
+                            op = GlueOperator(
+                                task_id=step.name,
+                                job_name=step.name,
+                                glue_role=os.getenv('ASSUMED_ROLE'),
+                                script_name='Demo',
+                                python_file_location=f's3://{os.getenv("GLUE_BUCKET")}/{step.etl_platform_filename}',
+                                python_local_path=etl_scripts[f'{step.etl_platform}/{step.etl_platform_filename}'][0],
+                                # python_version='3',
+                                job_config=dict(source_data=json.dumps(step.source_data),
+                                                target_data=json.dumps(step.target_data),
+                                                **additional_job_config),
+                                **step.parameters
+                            )
                         elif etl_platform == 'bigquery_transfer':
                             op = BigqueryDataTransferOperator(
                                 task_id=str(idx) + '_' + step['name'],
@@ -95,23 +123,7 @@ class DAGGenerator:
                                 target_table=step['target_data'][0]['table'],
                                 target_database=step['target_data'][0]['database']
                             )
-
-                        spice_refresh = step.get('target_data', [{}])[0].get('quicksight_spice_refresh', None)
-                        if spice_refresh:
-                            trigger_task_id = f'trigger_spice_{str(idx)}_{step["name"]}'
-                            trigger_op = QuicksightSpiceRefreshOperator(task_id=trigger_task_id,
-                                                                        quicksight_dataset_id=spice_refresh,
-                                                                        aws_account_id=getenv('AWS_ACCOUNT_ID'))
-
-                            sensor_op = QuicksightSpiceRefreshSensor(task_id=f'sensor_spice_{str(idx)}_{step["name"]}',
-                                                                     quicksight_dataset_id=spice_refresh,
-                                                                     spice_trigger_task_id=trigger_task_id,
-                                                                     aws_account_id=getenv('AWS_ACCOUNT_ID'))
-
-                            op >> trigger_op >> sensor_op
-                            flow_ops[str(idx)].append([op, trigger_op, sensor_op])
-                        else:
-                            flow_ops[str(idx)].append(op)
+                        flow_ops[str(idx)].append(op)
 
                     previous_steps = []
                     for k, current_step_ops in flow_ops.items():
