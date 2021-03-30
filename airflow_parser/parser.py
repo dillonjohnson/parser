@@ -66,6 +66,8 @@ class DAGGenerator:
                     filepath = dirpath + '/' + filename
                     etl_scripts[str(filepath).replace(self.etl_scripts_path, '')] = str(filepath)
 
+        print(f'etl_scripts={etl_scripts}')
+
         DEFAULT_ARGS = {
             'owner': self.dag_owners,
             'start_date': datetime(2020, 1, 1),  # Abitrary date in the past, won't matter since catchup=False
