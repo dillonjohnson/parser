@@ -21,10 +21,12 @@ class DAGGenerator:
     def __init__(self,
                  control_file_path: str,
                  etl_scripts_path: str,
-                 dag_owners: str):
+                 dag_owners: str,
+                 debugwin: bool = False):
         self.control_file_path = control_file_path
         self.etl_scripts_path = etl_scripts_path
         self.dag_owners = dag_owners
+        self.debugwin = debugwin
 
 
     def generate_dags(self):
@@ -94,24 +96,29 @@ class DAGGenerator:
                             )
                         elif etl_platform == 'glue':
                             additional_job_config = step.get('parameters', {}).copy()
-                            remove_keys = ['glue_max_capacity', 'python_version']
+                            remove_keys = ['glue_max_capacity', 'python_version', 'version']
                             for key in remove_keys:
                                 try:
                                     additional_job_config.pop(key)
                                 except KeyError:
                                     continue
+                            if self.debugwin:
+                                this_python_local_path = etl_scripts[f'\\{step["etl_platform_filename"]}'][0]
+                            else:
+                                this_python_local_path = etl_scripts[f'{step["etl_platform"]}/{step["etl_platform_filename"]}'][0]
+
                             op = GlueOperator(
-                                task_id=step.name,
-                                job_name=step.name,
+                                task_id=step['name'],
+                                job_name=step['name'],
                                 glue_role=os.getenv('ASSUMED_ROLE'),
-                                script_name='Demo',
-                                python_file_location=f's3://{os.getenv("GLUE_BUCKET")}/{step.etl_platform_filename}',
-                                python_local_path=etl_scripts[f'{step.etl_platform}/{step.etl_platform_filename}'][0],
+                                #script_name='Demo',
+                                python_file_location=f's3://{os.getenv("GLUE_BUCKET")}/{step["etl_platform_filename"]}',
+                                python_local_path=this_python_local_path,
                                 # python_version='3',
-                                job_config=dict(source_data=json.dumps(step.source_data),
-                                                target_data=json.dumps(step.target_data),
+                                job_config=dict(source_data=json.dumps(step["source_data"]),
+                                                target_data=json.dumps(step["target_data"]),
                                                 **additional_job_config),
-                                **step.parameters
+                                #**step['parameters']
                             )
                         elif etl_platform == 'bigquery_transfer':
                             op = BigqueryDataTransferOperator(
@@ -138,6 +145,8 @@ class DAGGenerator:
                 yield dag
 
 
-# if __name__ == '__main__':
-#     d = DAGGenerator("")
-#     dags = list(d.generate_dags())
+if __name__ == '__main__':
+    d = DAGGenerator(etl_scripts_path=r'/code/cf-airflow/etl_scripts',
+                     control_file_path=r'c:\code\cf-airflow\control_files',
+                     dag_owners='Jon', debugwin=True)
+    dags = list(d.generate_dags())
